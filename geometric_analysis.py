@@ -5,17 +5,15 @@ import numpy as np
 import pandas as pd
 import random
 from scipy.optimize import fsolve
-import scipy.optimize
+from scipy.optimize import brentq
 import matplotlib.pyplot as plt
 import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-s','--struct',nargs='+',
-                    help='structure to generate distribution for')
-args = parser.parse_args()
+##################################################################################################################
+####################################### FUNCTIONS FOR CALCULATIONS ###############################################
+##################################################################################################################
 
-
-# Define the triply periodic minimal surface functions
+# Define the triply periodic minimal surface functions and their gradients
 def SchwarzD(X, period):
 
     N = 2*np.pi/period
@@ -81,12 +79,23 @@ def Primitive_grad(v, period):
 
 # Functions for solving the equations
 
-def P(t,X,period=9.4):
+def P_gyroid(t,X,period=9.4): # return point extended along the normal from gyroid surface
     n = Gyroid_grad(X,period)
     
     return X + t*n
 
-def Gyroid_eq(X,period=9.4):
+def P_schwarz(t,X,period=9.4): # return point extended along the normal from schwarz surface
+    n = SchwarzD_grad(X,period)
+    
+    return X + t*n
+
+def P_primitive(t,X,period=9.4): # return point extended along the normal from primitive surface
+    n = Primitive_grad(X,period)
+    
+    return X + t*n
+
+# functions for numerical solver that outputs a function of the distance projected along normal
+def Gyroid_eq(X,period=9.4): 
 
     n = Gyroid_grad(X,period)
     N = 2*np.pi/period
@@ -108,97 +117,177 @@ def Primitive_eq(X,period=9.4):
     return lambda t : np.cos(N * (X[0] + t*n[0])) + np.cos(N * (X[1] + t*n[1])) + np.cos(N * (X[2] + t*n[2]))
 
 
-# Main function for generating the distribution
-def surface2surface(structure,struct='gyroid',guess=4.5,box=9.4,period=9.4,sample=10):
+# Main function for generating the distance distributions
+def surface2surface(structure,struct='gyroid',guess=4.5,box=9.4,period=9.4,sample=10,restrictions=True):
+    
+    # some hard coded constants
+    short_dist_tol = 0.01
+    small_tol = 1
+
+    # intialize all variables
     distribution = []
-    ps = []
-    structs = np.zeros([sample,3])
-    count = 0
+    neg = 0
+    small = 0
+    big = 0
+    good = 0
+
+    # define necessary functions for the chosen structure
+    if struct == 'gyroid':
+        P = P_gyroid
+        solve_eq = Gyroid_eq
+    elif struct == 'schwarzD':
+        P = P_schwarz
+        solve_eq = SchwarzD_eq
+    elif struct == 'primitive':
+        P = P_primitive
+        solve_eq = Primitive_eq
+
+    # generate distribution of surface to surface distances
     while len(distribution) < sample:
 
-        p = random.randint(0, structure.shape[0] - 1)
+        p = random.randint(0, structure.shape[0] - 1) # choose a random point on the discretized surface
         point = structure[p,:]
-        if struct == 'gyroid':
-            n = Gyroid_grad(point,period)
-            sol = fsolve(Gyroid_eq(point,period), guess)
-        elif struct == 'schwarzD':
-            n = SchwarzD_grad(point,period)
-            sol = fsolve(SchwarzD_eq(point,period), guess)
-        elif struct == 'primitive':
-            n = Primitive_grad(point,period)
-            sol = fsolve(Primitive_eq(point,period), guess)
+            
+        # find the point actually on the surface
+        short_dist = fsolve(solve_eq(point,period), short_dist_tol)
+        new_point = P(short_dist, point, period=period)
+
+        # solve for the distance from the new point to another point on the minimal surface
+        sol = fsolve(solve_eq(new_point,period), guess)
         
-        if not sol > box and sol > 0:
-            distribution.append(sol)
-            structs[count,:] = P(sol,point,period=period)
-            ps.append(p)
-            count += 1
+        if restrictions:
+            if abs(sol) < box and abs(sol) > 1: # only save reasonable values
+                distribution.append(abs(sol))
+        else:
+            distribution.append(sol) # save every value
 
-            if sol < 0.1:
-                print(sol)
+        # keep track of the abnormalities
+        if abs(sol) < box and abs(sol) > 1:
+            good += 1
+        if sol < 0:
+            neg += 1
+        if abs(sol) < small_tol:
+            small += 1
+        if abs(sol) > box:
+            big += 1
                 
-    return distribution, structs, ps
+    print('\nReasonable solutions for %s: %d' %(struct, good))
+    print('Negative solutions for %s: %d' %(struct, neg))
+    print('Solutions < %s nm for %s: %d' %(small_tol, struct, small))
+    print('Solutions outside the box for %s: %d' %(struct, big))
+    
+    return distribution
 
+'''
 # Solve using different solvers instead of fsolve (Newton)
 def surface2surface_test(structure,struct='gyroid',a=0,b=10,box=9.4,period=9.4,sample=10):
+    
+    # some hard coded constants
+    short_dist_tol = 0.01
+    small_tol = 1
+
+    # intialize all variables
     distribution = []
-    ps = []
-    structs = np.zeros([sample,3])
-    count = 0
+    neg = 0
+    small = 0
+    big = 0
+
+    # define necessary functions for the chosen structure
+    if struct == 'gyroid':
+        P = P_gyroid
+        solve_eq = Gyroid_eq
+    elif struct == 'schwarzD':
+        P = P_schwarz
+        solve_eq = SchwarzD_eq
+    elif struct == 'primitive':
+        P = P_primitive
+        solve_eq = Primitive_eq
+
+    # generate distribution of surface to surface distances
     while len(distribution) < sample:
 
-        p = random.randint(0, structure.shape[0] - 1)
+        p = random.randint(0, structure.shape[0] - 1) # choose a random point on the discretized surface
         point = structure[p,:]
-        if struct == 'gyroid':
-            n = Gyroid_grad(point,period)
-            sol = scipy.optimize.toms748(Gyroid_eq(point,period), a,b)
-        elif struct == 'schwarzD':
-            n = SchwarzD_grad(point,period)
-            sol = scipy.optimize.toms748(SchwarzD_eq(point,period), a,b)
+            
+        # find the point actually on the surface
+        short_dist = fsolve(solve_eq(point,period), short_dist_tol)
+        new_point = P(short_dist, point, period=period)
+
+        # solve for the distance from the new point to another point on the minimal surface
+        sol = fsolve(solve_eq(new_point,period), guess)
         
-        if not sol > box:
-            distribution.append(sol)
-            structs[count,:] = P(sol,point,period=period)
-            ps.append(p)
-            count += 1
+        if abs(sol) < box and abs(sol) > 1: # only save reasonable values
+            distribution.append(abs(sol))
+
+        # keep track of the abnormalities
+        if sol < 0:
+            neg += 1
+        if abs(sol) < small_tol:
+            small += 1
+        if abs(sol) > box:
+            big += 1
                 
-    return distribution, structs, ps
+    print('\nNegative solutions for %s: %d' %(struct, neg))
+    print('Solutions < %s nm for %s: %d' %(small_tol, struct, small))
+    print('Solutions outside the box for %s: %d' %(struct, big))
+    
+    return distribution
+'''
+
+
+##################################################################################################################
+############################################ INPUT PARAMETERS ####################################################
+##################################################################################################################
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-s','--struct',nargs='+',
+                    help='structure to generate distribution for')
+parser.add_argument('-n','--sample',type=int,
+                    help='number of samples in each distribution')
+parser.add_argument('-r','--restrict',action='store_true',
+                    help='only save reasonable values')
+parser.add_argument('-o','--output',default='output.png',
+                    help='name of the output figure file')
+args = parser.parse_args()
 
 # Parse arguments for which distributions to generate
-# if 'gyroid' in args.struct:
-#     gyroid = True
-# else:
-#     gyroid = False
+sample = args.sample
+restrictions = args.restrict
+if 'gyroid' in args.struct:
+    gyroid = True
+else:
+    gyroid = False
 
-# if 'schwarz' in args.struct:
-#     schwarz = True
-# else:
-#     schwarz = False
+if 'schwarz' in args.struct:
+    schwarz = True
+else:
+    schwarz = False
 
-# if 'primitive' in args.struct:
-#     primitive = True
-# else:
-#     primitive = False
-gyroid = False
-schwarz = True
-primitive = False
+if 'primitive' in args.struct:
+    primitive = True
+else:
+    primitive = False
+
+# Some hard coded parameters to use in all distributions
+n = 100                 # grid size for discretized structure
+box = 9.4               # box size in nm
+period = box            # period of the minimal surface in nm
+struct_tol = 0.01       # tolerance for locating discretized points on the surface
+guess = 4.6             # initial guess for the numerical solvers --> corresponds to the bilayer distance + expected pore size from MD and experiment
+# random.seed(123)      # uncomment if you want to set a random seed for reproducibility
 
 
-# Generate distributions
+##################################################################################################################
+######################################### GENERATE DISTRIBUTIONS #################################################
+##################################################################################################################
+
 if gyroid:
 
-    # ### Gyroid
     # Generate the structure
-    n = 100
-    box = 9.4 # nm
-    period = 9.4
     x = np.linspace(0,    box, n)
     y = np.linspace(0,    box, n)
     z = np.linspace(0,    box, n)
     X = [x[:,None,None], y[None,:,None], z[None,None,:]]
-
-    print('Box size is\t %.4f' %(box))
-    print('Period is\t %.4f' %(period))
 
     C = Gyroid(X, period)
 
@@ -207,45 +296,23 @@ if gyroid:
     for i in range(n):
         for j in range(n):
             for k in range(n):
-                if -0.01 < C[i,j,k] < 0.01:
+                if -struct_tol < C[i,j,k] < struct_tol:
                     grid[count,:] = [x[i], y[j], z[k]]
                     count += 1
                     
     structure = grid[:count, :]
-    print('Size of structure:')
-    print(structure.shape)
-
-    df = pd.DataFrame(structure, columns=['x','y','z'])
-    df['size'] = np.ones(structure.shape[0]) * 0.1
-
-    # #### Generate a full distribution
 
     # Generate the distribution
-    sample = 100
-    box = 9.4
-    guess = 4.6
-    struct = 'gyroid'
-
-    dist_gyroid,structs,ps = surface2surface(structure,struct=struct,guess=guess,box=box,period=period,sample=sample)
-    #dist_gyroid_test,structs_test,ps_test = surface2surface_test(structure,struct=struct,a=a,b=b,box=box,period=period,sample=sample)
-
+    dist_gyroid = surface2surface(structure,struct='gyroid',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     hist_gyroid = pd.DataFrame(dist_gyroid,columns=['Gyroid'])
 
-
 if schwarz:
-    # ### SchwarzD
 
     # Generate the structure
-    n = 100
-    box = 9.4 # nm
-    period = 9.4
     x = np.linspace(0,    box, n)
     y = np.linspace(0,    box, n)
     z = np.linspace(0,    box, n)
     X = [x[:,None,None], y[None,:,None], z[None,None,:]]
-
-    print('Box size is\t %.4f' %(box))
-    print('Period is\t %.4f' %(period))
 
     C = SchwarzD(X,period)
 
@@ -254,41 +321,24 @@ if schwarz:
     for i in range(n):
         for j in range(n):
             for k in range(n):
-                if -0.01 < C[i,j,k] < 0.01:
+                if -struct_tol < C[i,j,k] < struct_tol:
                     grid[count,:] = [x[i], y[j], z[k]]
                     count += 1
                     
     structure = grid[:count, :]
-    print('Size of structure:')
-    print(structure.shape)
-
-    df = pd.DataFrame(structure, columns=['x','y','z'])
-    df['size'] = np.ones(structure.shape[0]) * 0.1
-
-    # #### Generate a full distribution 
 
     # Generate the distribution
-    sample = 100
-    box = 9.4
-    guess = 4.6
-    struct = 'schwarzD'
-
-    dist_schwarzD,structs,ps = surface2surface(structure,struct=struct,guess=guess,box=box,period=period,sample=sample)
+    dist_schwarzD = surface2surface(structure,struct='schwarzD',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     hist_schwarzD = pd.DataFrame(dist_schwarzD,columns=['SchwarzD'])
 
+
 if primitive:
-    # ## Primitive
+
     # Generate the structure
-    n = 100
-    box = 9.4 # nm
-    period = 9.4
     x = np.linspace(0,    box, n)
     y = np.linspace(0,    box, n)
     z = np.linspace(0,    box, n)
     X = [x[:,None,None], y[None,:,None], z[None,None,:]]
-
-    print('Box size is\t %.4f' %(box))
-    print('Period is\t %.4f' %(period))
 
     C = Primitive(X, period)
 
@@ -297,31 +347,42 @@ if primitive:
     for i in range(n):
         for j in range(n):
             for k in range(n):
-                if -0.01 < C[i,j,k] < 0.01:
+                if -struct_tol < C[i,j,k] < struct_tol:
                     grid[count,:] = [x[i], y[j], z[k]]
                     count += 1
                     
     structure = grid[:count, :]
-    print('Size of structure:')
-    print(structure.shape)
-
-    df = pd.DataFrame(structure, columns=['x','y','z'])
-    df['size'] = np.ones(structure.shape[0]) * 0.1
 
     # Generate the distribution
-    sample = 100
-    box = 9.4
-    guess = 4.6
-    struct = 'primitive'
-
-    dist_primitive,structs,ps = surface2surface(structure,struct=struct,guess=guess,box=box,period=period,sample=sample)
+    dist_primitive = surface2surface(structure,struct='primitive',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     hist_primitive = pd.DataFrame(dist_primitive,columns=['Primitive'])
 
-
-
-
 # Plot histograms with matplotlib
-bins = np.linspace(0,10,50)
+if restrictions:
+    bins = np.linspace(0,10,50)
+else: # get minimums and maximums for histogram bins
+    min_dist = 100
+    max_dist = 0
+    if gyroid and min_dist > min(dist_gyroid):
+        min_dist = min(dist_gyroid)
+    if schwarz and min_dist > min(dist_schwarzD):
+        min_dist = min(dist_schwarzD)
+    if primitive and min_dist > min(dist_primitive):
+        min_dist = min(dist_primitive)
+
+    if gyroid and max_dist < max(dist_gyroid):
+        max_dist = max(dist_gyroid)
+    if schwarz and max_dist < max(dist_schwarzD):
+        max_dist = max(dist_schwarzD)
+    if primitive and max_dist > max(dist_primitive):
+        max_dist = max(dist_primitive)
+
+    min_dist = min_dist[0]
+    max_dist = max_dist[0]
+    print('\nMinimum: %s' %(min_dist))
+    print('Maximum: %s' %(max_dist))
+    bins = np.linspace(min_dist,max_dist,round((max_dist - min_dist) / 0.2))
+    
 
 fig, ax = plt.subplots(1,1, figsize=(10,8))
 if gyroid:
@@ -337,21 +398,48 @@ if primitive:
 
 # Add the bilayer thickness + pore size line
 x = np.ones(10)*4.59
-y = np.linspace(0,100,10)
+y = np.linspace(0,args.sample,10)
 ax.plot(x,y, color='black', linestyle='dashed',label='Expected pore-to-pore distance')
 ax.axvspan(4.59 - 0.17, 4.59 + 0.17, color='gray', alpha=0.5)
 
-
 # Some formatting
 ax.set_xlim(0,10)
-ax.set_ylim(0,100)
+ax.set_xticks(np.arange(0,11,1))
+ax.set_ylim(0,args.sample/3)
 ax.set_xlabel('distance (nm)',fontsize='large')
 ax.set_ylabel('counts',fontsize='large')
-ax.set_xticks(np.arange(0,11,1))
 ax.legend(fontsize='x-large')
-fig.savefig('output.png')
+title = 'Theoretical pore center to pore center distances for BCC structures, guess = %s' %(guess)
+ax.set_title(title)
+fig.savefig(args.output)
+
+if not restrictions:
+
+    fig, ax = plt.subplots(1,1, figsize=(10,8))
+    if gyroid:
+        ax.hist(hist_gyroid['Gyroid'], bins=bins,
+                alpha=0.5, label='Gyroid')
+    if schwarz:
+        ax.hist(hist_schwarzD['SchwarzD'], bins=bins,
+                alpha=0.5, label='Schwarz Diamond')
+    if primitive:
+        ax.hist(hist_primitive['Primitive'], bins=bins,
+            alpha=0.5, label='Primitive')
 
 
+    # Add the bilayer thickness + pore size line
+    x = np.ones(10)*4.59
+    y = np.linspace(0,args.sample,10)
+    ax.plot(x,y, color='black', linestyle='dashed',label='Expected pore-to-pore distance')
+    ax.axvspan(4.59 - 0.17, 4.59 + 0.17, color='gray', alpha=0.5)
 
+    ax.set_ylim(0,args.sample/10)
+    ax.set_xlabel('distance (nm)',fontsize='large')
+    ax.set_ylabel('counts',fontsize='large')
+    ax.legend(fontsize='x-large')
+    title = 'Theoretical pore center to pore center distances for BCC structures, guess = %s' %(guess)
+    ax.set_title(title)
 
-
+    out = args.output.split('.')[0]
+    out += '_full.png'
+    fig.savefig(out)
