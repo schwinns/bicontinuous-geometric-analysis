@@ -8,6 +8,10 @@ from scipy.optimize import fsolve
 from scipy.optimize import brentq
 import matplotlib.pyplot as plt
 import argparse
+from sklearn.neighbors import KernelDensity
+# from KDEpy import FFTKDE
+from sklearn.model_selection import GridSearchCV, KFold
+from matplotlib.ticker import MultipleLocator
 
 ##################################################################################################################
 ####################################### FUNCTIONS FOR CALCULATIONS ###############################################
@@ -183,63 +187,7 @@ def surface2surface(structure,struct='gyroid',guess=4.5,box=9.4,period=9.4,sampl
     
     return distribution
 
-def old_algorithm(structure,struct='gyroid',guess=4.5,box=9.4,period=9.4,sample=10,restrictions=True):
-    
-    # some hard coded constants
-    short_dist_tol = 0.01
-    small_tol = 1
-
-    # intialize all variables
-    distribution = []
-    neg = 0
-    small = 0
-    big = 0
-    good = 0
-
-    # define necessary functions for the chosen structure
-    if struct == 'gyroid':
-        P = P_gyroid
-        solve_eq = Gyroid_eq
-    elif struct == 'schwarzD':
-        P = P_schwarz
-        solve_eq = SchwarzD_eq
-    elif struct == 'primitive':
-        P = P_primitive
-        solve_eq = Primitive_eq
-
-    # generate distribution of surface to surface distances
-    while len(distribution) < sample:
-
-        p = random.randint(0, structure.shape[0] - 1) # choose a random point on the discretized surface
-        point = structure[p,:]
-
-        # solve for the distance from the new point to another point on the minimal surface
-        sol = fsolve(solve_eq(point,period), guess)
-        
-        if restrictions:
-            if abs(sol) < box and abs(sol) > 1: # only save reasonable values
-                distribution.append(abs(sol))
-        else:
-            distribution.append(sol) # save every value
-
-        # keep track of the abnormalities
-        if abs(sol) < box and abs(sol) > 1:
-            good += 1
-        if sol < 0:
-            neg += 1
-        if abs(sol) < small_tol:
-            small += 1
-        if abs(sol) > box:
-            big += 1
-                
-    print('\nReasonable solutions for %s: %d' %(struct, good))
-    print('Negative solutions for %s: %d' %(struct, neg))
-    print('Solutions < %s nm for %s: %d' %(small_tol, struct, small))
-    print('Solutions outside the box for %s: %d' %(struct, big))
-    
-    return distribution
-
-def brentq_solver(structure,struct='gyroid',box=9.4,period=9.4,sample=10,restrictions=True):
+def brentq_solver(structure,struct='gyroid',box=9.4,period=9.4,sample=10):
     
     # some hard coded constants
     short_dist_tol = 0.01
@@ -309,13 +257,8 @@ def brentq_solver(structure,struct='gyroid',box=9.4,period=9.4,sample=10,restric
             
         if not checked:
             sol = brentq(solve_eq(new_point,period), a=a, b=b)
-            # print(sol)
 
-            if restrictions:
-                if abs(sol) < box and abs(sol) > small_tol: # only save reasonable values
-                    distribution.append(abs(sol))
-            else:
-                distribution.append(sol) # save every value
+            distribution.append(abs(sol)) # save every value
 
             # keep track of the abnormalities
             if abs(sol) < box and abs(sol) > small_tol:
@@ -334,62 +277,6 @@ def brentq_solver(structure,struct='gyroid',box=9.4,period=9.4,sample=10,restric
     
     return distribution
 
-
-'''
-# Solve using different solvers instead of fsolve (Newton)
-def surface2surface_test(structure,struct='gyroid',a=0,b=10,box=9.4,period=9.4,sample=10):
-    
-    # some hard coded constants
-    short_dist_tol = 0.01
-    small_tol = 1
-
-    # intialize all variables
-    distribution = []
-    neg = 0
-    small = 0
-    big = 0
-
-    # define necessary functions for the chosen structure
-    if struct == 'gyroid':
-        P = P_gyroid
-        solve_eq = Gyroid_eq
-    elif struct == 'schwarzD':
-        P = P_schwarz
-        solve_eq = SchwarzD_eq
-    elif struct == 'primitive':
-        P = P_primitive
-        solve_eq = Primitive_eq
-
-    # generate distribution of surface to surface distances
-    while len(distribution) < sample:
-
-        p = random.randint(0, structure.shape[0] - 1) # choose a random point on the discretized surface
-        point = structure[p,:]
-            
-        # find the point actually on the surface
-        short_dist = fsolve(solve_eq(point,period), short_dist_tol)
-        new_point = P(short_dist, point, period=period)
-
-        # solve for the distance from the new point to another point on the minimal surface
-        sol = fsolve(solve_eq(new_point,period), guess)
-        
-        if abs(sol) < box and abs(sol) > 1: # only save reasonable values
-            distribution.append(abs(sol))
-
-        # keep track of the abnormalities
-        if sol < 0:
-            neg += 1
-        if abs(sol) < small_tol:
-            small += 1
-        if abs(sol) > box:
-            big += 1
-                
-    print('\nNegative solutions for %s: %d' %(struct, neg))
-    print('Solutions < %s nm for %s: %d' %(small_tol, struct, small))
-    print('Solutions outside the box for %s: %d' %(struct, big))
-    
-    return distribution
-'''
 
 
 ##################################################################################################################
@@ -424,11 +311,7 @@ if 'primitive' in args.struct:
     primitive = True
 else:
     primitive = False
-# sample = 100
-# restrictions = False
-# gyroid = False
-# schwarz = True
-# primitive = False
+
 
 # Some hard coded parameters to use in all distributions
 n = 100                 # grid size for discretized structure
@@ -436,7 +319,7 @@ box = 9.4               # box size in nm
 period = box            # period of the minimal surface in nm
 struct_tol = 0.01       # tolerance for locating discretized points on the surface
 guess = 4.6             # initial guess for the numerical solvers --> corresponds to the bilayer distance + expected pore size from MD and experiment
-random.seed(123)      # uncomment if you want to set a random seed for reproducibility
+# random.seed(123)      # uncomment if you want to set a random seed for reproducibility
 
 
 ##################################################################################################################
@@ -466,7 +349,7 @@ if gyroid:
 
     # Generate the distribution
     # dist_gyroid = surface2surface(structure,struct='gyroid',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
-    dist_gyroid = brentq_solver(structure,struct='gyroid',box=box,period=period,sample=sample,restrictions=restrictions)
+    dist_gyroid = brentq_solver(structure,struct='gyroid',box=box,period=period,sample=sample)
     hist_gyroid = pd.DataFrame(dist_gyroid,columns=['Gyroid'])
 
 if schwarz:
@@ -492,7 +375,7 @@ if schwarz:
 
     # Generate the distribution
     #dist_schwarzD = surface2surface(structure,struct='schwarzD',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
-    dist_schwarzD = brentq_solver(structure,struct='schwarzD',box=box,period=period,sample=sample,restrictions=restrictions)
+    dist_schwarzD = brentq_solver(structure,struct='schwarzD',box=box,period=period,sample=sample)
     hist_schwarzD = pd.DataFrame(dist_schwarzD,columns=['SchwarzD'])
 
 
@@ -519,93 +402,139 @@ if primitive:
 
     # Generate the distribution
     # dist_primitive = surface2surface(structure,struct='primitive',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
-    dist_primitive = brentq_solver(structure,struct='primitive',box=box,period=period,sample=sample,restrictions=restrictions)
+    dist_primitive = brentq_solver(structure,struct='primitive',box=box,period=period,sample=sample)
     hist_primitive = pd.DataFrame(dist_primitive,columns=['Primitive'])
 
+##################################################################################################################
+######################################### PLOT DISTRIBUTIONS #####################################################
+##################################################################################################################
+
 # Plot histograms with matplotlib
-if restrictions:
-    bins = np.linspace(0,10,50)
-else: # get minimums and maximums for histogram bins
-    min_dist = [100]
-    max_dist = [0]
-    if gyroid and min_dist[0] > min(dist_gyroid):
-        min_dist[0] = min(dist_gyroid)
-    if schwarz and min_dist[0] > min(dist_schwarzD):
-        min_dist[0] = min(dist_schwarzD)
-    if primitive and min_dist[0] > min(dist_primitive):
-        min_dist[0] = min(dist_primitive)
-
-    if gyroid and max_dist[0] < max(dist_gyroid):
-        max_dist[0] = max(dist_gyroid)
-    if schwarz and max_dist[0] < max(dist_schwarzD):
-        max_dist[0] = max(dist_schwarzD)
-    if primitive and max_dist[0] > max(dist_primitive):
-        max_dist[0] = max(dist_primitive)
-
-    min_dist = min_dist[0]
-    max_dist = max_dist[0]
-    print('\nMinimum: %s' %(min_dist))
-    print('Maximum: %s' %(max_dist))
-    bins = np.linspace(min_dist,max_dist,round((max_dist - min_dist) / 0.2))
-    
-
+print()
 fig, ax = plt.subplots(1,1, figsize=(10,8))
 if gyroid:
-    ax.hist(hist_gyroid['Gyroid'], bins=bins,
-            alpha=0.5, label='Gyroid')
+
+# No kernel density
+    # bins = np.linspace(0,10,50)
+    # ax.hist(hist_gyroid['Gyroid'], bins=bins, alpha=0.5, label='Gyroid', density=True)
+
+# Manual bandwidth choice with sklearn
+    # X_plot = np.linspace(0,10,1000)
+    # reshaped = np.array(hist_gyroid['Gyroid']).reshape(-1,1)
+    # kde = KernelDensity(kernel="gaussian", bandwidth=0.75).fit(reshaped)
+    # log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    # ax.plot(X_plot, np.exp(log_dens), label='Gyroid')
+
+# K-fold cross validation for bandwidth choice with sklearn
+    X_plot = np.linspace(0,10,1000)
+    reshaped = np.array(hist_gyroid['Gyroid']).reshape(-1,1)
+
+    bandwidths = 10 ** np.linspace(-1, 1, 100)
+    grid = GridSearchCV(KernelDensity(kernel='gaussian'),
+                        {'bandwidth': bandwidths},
+                        cv=KFold(n_splits=10))
+    grid.fit(reshaped)
+    bw = grid.best_params_['bandwidth']
+    print('Best bandwidth for gyroid:', bw)
+
+    kde = KernelDensity(kernel="gaussian", bandwidth=bw).fit(reshaped)
+    log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    ax.plot(X_plot, np.exp(log_dens), label='Gyroid')
+
+# Improved Sheather Jones bandwidth choice with KDEpy
+    # reshaped = np.array(hist_gyroid['Gyroid']).reshape(-1,1)
+    # x, y = FFTKDE(kernel='gaussian', bw='ISJ').fit(reshaped).evaluate()
+    # ax.plot(x, y, label='Gyroid')
+
 if schwarz:
-    ax.hist(hist_schwarzD['SchwarzD'], bins=bins,
-            alpha=0.5, label='Schwarz Diamond')
+
+# No kernel density
+#     bins = np.linspace(0,10,50)
+#     ax.hist(hist_schwarzD['SchwarzD'], bins=bins,
+#             alpha=0.5, label='Schwarz Diamond')
+
+# Manual bandwidth choice with sklearn
+    # X_plot = np.linspace(0,10,1000)
+    # reshaped = np.array(hist_schwarzD['SchwarzD']).reshape(-1,1)
+    # kde = KernelDensity(kernel="gaussian", bandwidth=0.75).fit(reshaped)
+    # log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    # ax.plot(X_plot, np.exp(log_dens), label='Schwarz Diamond')
+
+# K-fold cross validation for bandwidth choice with sklearn
+    X_plot = np.linspace(0,10,1000)
+    reshaped = np.array(hist_schwarzD['SchwarzD']).reshape(-1,1)
+
+    bandwidths = 10 ** np.linspace(-1, 1, 100)
+    grid = GridSearchCV(KernelDensity(kernel='gaussian'),
+                        {'bandwidth': bandwidths},
+                        cv=KFold(n_splits=10))
+    grid.fit(reshaped)
+    bw = grid.best_params_['bandwidth']
+    print('Best bandwidth for schwarzD:', bw)
+
+    kde = KernelDensity(kernel="gaussian", bandwidth=bw).fit(reshaped)
+    log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    ax.plot(X_plot, np.exp(log_dens), label='Schwarz Diamond')
+
+# Improved Sheather Jones bandwidth choice with KDEpy
+    # reshaped = np.array(hist_schwarzD['SchwarzD']).reshape(-1,1)
+    # x, y = FFTKDE(kernel='gaussian', bw='ISJ').fit(reshaped).evaluate()
+    # ax.plot(x, y, label='SchwarzD')
+
 if primitive:
-    ax.hist(hist_primitive['Primitive'], bins=bins,
-           alpha=0.5, label='Primitive')
+
+# No kernel density
+#     bins = np.linspace(0,10,50)
+#     ax.hist(hist_primitive['Primitive'], bins=bins,
+#        alpha=0.5, label='Primitive')
+
+# Manual bandwidth choice with sklearn
+    # X_plot = np.linspace(0,10,1000)
+    # reshaped = np.array(hist_primitive['Primitive']).reshape(-1,1)
+    # kde = KernelDensity(kernel="gaussian", bandwidth=0.75).fit(reshaped)
+    # log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    # ax.plot(X_plot, np.exp(log_dens), label='Primitive')
+
+# K-fold cross validation for bandwidth choice with sklearn
+    X_plot = np.linspace(0,10,1000)
+    reshaped = np.array(hist_primitive['Primitive']).reshape(-1,1)
+
+    bandwidths = 10 ** np.linspace(-1, 1, 100)
+    grid = GridSearchCV(KernelDensity(kernel='gaussian'),
+                        {'bandwidth': bandwidths},
+                        cv=KFold(n_splits=10))
+    grid.fit(reshaped)
+    bw = grid.best_params_['bandwidth']
+    print('Best bandwidth for primitive:', bw)
+
+    kde = KernelDensity(kernel="gaussian", bandwidth=bw).fit(reshaped)
+    log_dens = kde.score_samples(X_plot.reshape(-1,1))
+    ax.plot(X_plot, np.exp(log_dens), label='Primitive')
+
+# Improved Sheather Jones bandwidth choice with KDEpy
+    # reshaped = np.array(hist_primitive['Primitive']).reshape(-1,1)
+    # x, y = FFTKDE(kernel='gaussian', bw='ISJ').fit(reshaped).evaluate()
+    # ax.plot(x, y, label='Primitive')
 
 
 # Add the bilayer thickness + pore size line
-x = np.ones(10)*4.59
-y = np.linspace(0,args.sample,10)
-ax.plot(x,y, color='black', linestyle='dashed',label='Expected pore-to-pore distance')
-ax.axvspan(4.59 - 0.17, 4.59 + 0.17, color='gray', alpha=0.5)
+ax.axvline(4.6, color='black', linestyle='dashed', label='Expected pore-to-pore distance')
+ax.axvspan(4.6 - 0.2, 4.6 + 0.2, color='gray', alpha=0.5)
 
 # Some formatting
 ax.set_xlim(0,10)
-ax.set_xticks(np.arange(0,11,1))
-ax.set_ylim(0,args.sample/3)
+ax.set_ylim(0,)
+
+ax.yaxis.set_major_locator(MultipleLocator(0.2))
+ax.yaxis.set_minor_locator(MultipleLocator(0.02))
+ax.xaxis.set_major_locator(MultipleLocator(1))
+ax.xaxis.set_minor_locator(MultipleLocator(0.2))
+
 ax.set_xlabel('distance (nm)',fontsize='large')
-ax.set_ylabel('counts',fontsize='large')
+ax.set_ylabel('probability density',fontsize='large')
 ax.legend(fontsize='x-large',loc=1)
-title = 'Theoretical pore center to pore center distances for BCC structures, guess = %s' %(guess)
-ax.set_title(title)
+title = 'Theoretical pore center to pore center distances for BCC structures'
+# ax.set_title(title)
+plt.show()
 fig.savefig(args.output)
 
-if not restrictions:
-
-    fig, ax = plt.subplots(1,1, figsize=(10,8))
-    if gyroid:
-        ax.hist(hist_gyroid['Gyroid'], bins=bins,
-                alpha=0.5, label='Gyroid')
-    if schwarz:
-        ax.hist(hist_schwarzD['SchwarzD'], bins=bins,
-                alpha=0.5, label='Schwarz Diamond')
-    if primitive:
-        ax.hist(hist_primitive['Primitive'], bins=bins,
-            alpha=0.5, label='Primitive')
-
-
-    # Add the bilayer thickness + pore size line
-    # x = np.ones(10)*4.59
-    # y = np.linspace(0,args.sample,10)
-    # ax.plot(x,y, color='black', linestyle='dashed',label='Expected pore-to-pore distance')
-    # ax.axvspan(4.59 - 0.17, 4.59 + 0.17, color='gray', alpha=0.5)
-
-    ax.set_xlim(-box,2*box)
-    # ax.set_ylim(0,args.sample/10)
-    ax.set_xlabel('distance (nm)',fontsize='large')
-    ax.set_ylabel('counts',fontsize='large')
-    ax.legend(fontsize='x-large',loc=1)
-    title = 'Theoretical pore center to pore center distances for BCC structures, guess = %s' %(guess)
-    ax.set_title(title)
-
-    out = args.output.split('.')[0]
-    out += '_full.png'
-    fig.savefig(out)

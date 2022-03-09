@@ -1,0 +1,15 @@
+
+Reasonable solutions for gyroid: 10000
+Negative solutions for gyroid: 1575
+Solutions < 0.01 nm for gyroid: 0
+Solutions outside the box for gyroid: 0
+
+Reasonable solutions for schwarzD: 10000
+Negative solutions for schwarzD: 623
+Solutions < 0.01 nm for schwarzD: 0
+Solutions outside the box for schwarzD: 0
+
+Reasonable solutions for primitive: 10000
+Negative solutions for primitive: 1054
+Solutions < 0.01 nm for primitive: 0
+Solutions outside the box for primitive: 0
