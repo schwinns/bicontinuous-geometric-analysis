@@ -11,7 +11,6 @@ import argparse
 from sklearn.neighbors import KernelDensity
 # from KDEpy import FFTKDE
 from sklearn.model_selection import GridSearchCV, KFold
-from matplotlib.ticker import MultipleLocator
 
 ##################################################################################################################
 ####################################### FUNCTIONS FOR CALCULATIONS ###############################################
@@ -441,6 +440,10 @@ if gyroid:
     log_dens = kde.score_samples(X_plot.reshape(-1,1))
     ax.plot(X_plot, np.exp(log_dens), label='Gyroid')
 
+    # Save data
+    header = 'Geometric sampling of pore-to-pore distances for the Gyroid phase'
+    np.savetxt(args.output + '_gyroid.txt', np.array([X_plot, np.exp(log_dens)]), header=header)
+
 # Improved Sheather Jones bandwidth choice with KDEpy
     # reshaped = np.array(hist_gyroid['Gyroid']).reshape(-1,1)
     # x, y = FFTKDE(kernel='gaussian', bw='ISJ').fit(reshaped).evaluate()
@@ -474,7 +477,11 @@ if schwarz:
 
     kde = KernelDensity(kernel="gaussian", bandwidth=bw).fit(reshaped)
     log_dens = kde.score_samples(X_plot.reshape(-1,1))
-    ax.plot(X_plot, np.exp(log_dens), label='Schwarz Diamond')
+    ax.plot(X_plot, np.exp(log_dens), label='SchwarzD')
+
+    # Save data
+    header = 'Geometric sampling of pore-to-pore distances for the Schwarz Diamond phase'
+    np.savetxt(args.output + '_schwarz.txt', np.array([X_plot, np.exp(log_dens)]), header=header)
 
 # Improved Sheather Jones bandwidth choice with KDEpy
     # reshaped = np.array(hist_schwarzD['SchwarzD']).reshape(-1,1)
@@ -511,6 +518,10 @@ if primitive:
     log_dens = kde.score_samples(X_plot.reshape(-1,1))
     ax.plot(X_plot, np.exp(log_dens), label='Primitive')
 
+    # Save data
+    header = 'Geometric sampling of pore-to-pore distances for the Primitive phase'
+    np.savetxt(args.output + '_primitive.txt', np.array([X_plot, np.exp(log_dens)]), header=header)
+
 # Improved Sheather Jones bandwidth choice with KDEpy
     # reshaped = np.array(hist_primitive['Primitive']).reshape(-1,1)
     # x, y = FFTKDE(kernel='gaussian', bw='ISJ').fit(reshaped).evaluate()
@@ -523,18 +534,13 @@ ax.axvspan(4.6 - 0.2, 4.6 + 0.2, color='gray', alpha=0.5)
 
 # Some formatting
 ax.set_xlim(0,10)
-ax.set_ylim(0,)
-
-ax.yaxis.set_major_locator(MultipleLocator(0.2))
-ax.yaxis.set_minor_locator(MultipleLocator(0.02))
-ax.xaxis.set_major_locator(MultipleLocator(1))
-ax.xaxis.set_minor_locator(MultipleLocator(0.2))
-
+ax.set_xticks(np.arange(0,11,1))
+# ax.set_ylim(0,0.5)
 ax.set_xlabel('distance (nm)',fontsize='large')
 ax.set_ylabel('probability density',fontsize='large')
 ax.legend(fontsize='x-large',loc=1)
 title = 'Theoretical pore center to pore center distances for BCC structures'
 # ax.set_title(title)
 plt.show()
-fig.savefig(args.output)
+# fig.savefig(args.output + '.png')
 
