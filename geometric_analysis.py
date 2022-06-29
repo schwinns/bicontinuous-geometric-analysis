@@ -350,6 +350,7 @@ if gyroid:
     # dist_gyroid = surface2surface(structure,struct='gyroid',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     dist_gyroid = brentq_solver(structure,struct='gyroid',box=box,period=period,sample=sample)
     hist_gyroid = pd.DataFrame(dist_gyroid,columns=['Gyroid'])
+    np.savetxt(args.output + '_gyroid_raw.txt', dist_gyroid, header='Gyroid pore-to-pore distances (nm)')
 
 if schwarz:
 
@@ -376,6 +377,8 @@ if schwarz:
     #dist_schwarzD = surface2surface(structure,struct='schwarzD',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     dist_schwarzD = brentq_solver(structure,struct='schwarzD',box=box,period=period,sample=sample)
     hist_schwarzD = pd.DataFrame(dist_schwarzD,columns=['SchwarzD'])
+    np.savetxt(args.output + '_schwarz_raw.txt', dist_schwarzD, header='SchwarzD pore-to-pore distances (nm)')
+
 
 
 if primitive:
@@ -403,6 +406,8 @@ if primitive:
     # dist_primitive = surface2surface(structure,struct='primitive',guess=guess,box=box,period=period,sample=sample,restrictions=restrictions)
     dist_primitive = brentq_solver(structure,struct='primitive',box=box,period=period,sample=sample)
     hist_primitive = pd.DataFrame(dist_primitive,columns=['Primitive'])
+    np.savetxt(args.output + '_primitive_raw.txt', dist_primitive, header='Primitive pore-to-pore distances (nm)')
+
 
 ##################################################################################################################
 ######################################### PLOT DISTRIBUTIONS #####################################################
